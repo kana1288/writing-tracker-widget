@@ -22,12 +22,15 @@ from datetime import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
-DEFAULT_FOLDER = "testFolder"
+DEFAULT_FOLDER = str(Path.home() / "Desktop" / "글자수자동집계폴더")
 DEFAULT_PORT = 8000
 POLL_INTERVAL_SECONDS = 10
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 INDEX_HTML = PROJECT_ROOT / "index.html"
+# 기준점은 저장소가 아니라 홈 아래 별도 위치에 둔다. 저장소에 두면 저장소 밖
+# 원고를 읽어 만든 파생 데이터가 GitHub에 올라갈 위험이 있다.
+STATE_DIR = Path.home() / ".writing-tracker"
 
 # 집계 대상 확장자. .hwp(구형 바이너리)는 순수 표준 라이브러리로 파싱하기 어려워
 # 제외한다. 필요하면 pyhwp 등 외부 의존성을 도입해야 한다.
@@ -182,6 +185,17 @@ def scan_and_update(folder: Path, baseline_path: Path) -> tuple[int, str]:
     return delta, datetime.now().astimezone().isoformat()
 
 
+def default_baseline_path(folder: Path) -> Path:
+    """감시 폴더별 기준점 파일 경로를 만든다.
+
+    폴더마다 다른 파일을 써야 한다. 기준점을 공유하면 폴더를 바꿨을 때 이전
+    폴더와 글자 수가 겹치지 않는 한위 파일이 "새로 작성한 글자"로 잡힌다.
+    폴더 경로에서 안전하지 않은 문자를 제거해 파일명으로 쓴다.
+    """
+    slug = re.sub(r"[^\w\-]+", "_", str(folder).strip("/")).strip("_")
+    return STATE_DIR / f"baseline-{slug}.json"
+
+
 def make_handler(folder: Path, baseline_path: Path) -> type[BaseHTTPRequestHandler]:
     class DeltaHandler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:  # noqa: N802 (BaseHTTPRequestHandler 규약)
@@ -251,7 +265,7 @@ def main() -> int:
     parser.add_argument(
         "--baseline",
         default=None,
-        help="기준점 파일 경로 (기본값: 저장소 루트의 baseline.json). "
+        help="기준점 파일 경로 (기본값: ~/.writing-tracker/ 아래 폴더별 파일). "
         "테스트는 여기에 임시 경로를 줘서 실제 기준점을 건드리지 않는다.",
     )
     args = parser.parse_args()
@@ -264,7 +278,7 @@ def main() -> int:
     baseline_path = (
         Path(args.baseline).expanduser().resolve()
         if args.baseline
-        else PROJECT_ROOT / "baseline.json"
+        else default_baseline_path(folder)
     )
     baseline_path.parent.mkdir(parents=True, exist_ok=True)
 

@@ -10,8 +10,12 @@ set -e
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # 감시할 원고 폴더. 여기에 .txt / .hwpx 파일을 두면 글자 수를 센다.
-FOLDER="/Users/kim-ayoung/Documents/GitHub/writing-tracker-widget/testFolder"
+# 데스크탑의 '글자수자동집계폴더'에 원고를 두고 쓴다.
+FOLDER="$HOME/Desktop/글자수자동집계폴더"
 PORT=8000
+
+# 폴더가 없으면 만들어 준다 (집계 폴더를 처음 쓸 때).
+mkdir -p "$FOLDER"
 
 # venv 파이썬이 있으면 쓰고, 없으면 시스템 파이썬으로 떨어진다.
 if [ -x "$HERE/.venv/bin/python3" ]; then
