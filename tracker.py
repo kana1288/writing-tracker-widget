@@ -1,20 +1,23 @@
 """글쓰기 트래커 — 파일 스캔 기반 자동 글자 수 집계.
 
-폴더 안의 .txt 파일 글자 수를 주기적으로 스캔하고, 직전 스캔 대비 증가분
+폴더 안의 .txt / .hwpx 파일 글자 수를 주기적으로 스캔하고, 직전 스캔 대비 증가분
 (델타)을 위젯에 전달한다. 글자 수는 "공백 포함, 줄바꿈 제외"로 센다.
 
 데이터 소유권: 원본은 위젯(브라우저 localStorage). 이 프로그램은 델타만 계산해
 전달하며, 스캔 기준점(baseline)만 로컬 파일에 보관한다.
 
-표준 라이브러리만 사용한다 (윈도우 · 맥 공통).
+표준 라이브러리만 사용한다 (윈도우 · 맥 공통). HWPX는 ZIP + XML이라 외부 도구
+(pyhwp, LibreOffice) 없이도 텍스트를 뽑을 수 있다.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import re
 import socket
 import sys
+import zipfile
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -26,6 +29,40 @@ POLL_INTERVAL_SECONDS = 10
 PROJECT_ROOT = Path(__file__).resolve().parent
 INDEX_HTML = PROJECT_ROOT / "index.html"
 
+# 집계 대상 확장자. .hwp(구형 바이너리)는 순수 표준 라이브러리로 파싱하기 어려워
+# 제외한다. 필요하면 pyhwp 등 외부 의존성을 도입해야 한다.
+TEXT_SUFFIXES = frozenset({".txt", ".hwpx"})
+
+# HWPX 내부 구조: Contents/section<N>.xml에 문단이 들어 있다.
+# N이 두 자리 넘어가면 문자열 정렬이 section10을 section2보다 앞에 놓는다.
+# 본문 순서가 곧 글자 순서이므로 숫자로 정렬해야 한다.
+_SECTION_RE = re.compile(r"^Contents/section(\d+)\.xml$")
+_PARAGRAPH_RE = re.compile(r"<hp:p\b.*?</hp:p>", re.S)
+_TEXT_RUN_RE = re.compile(r"<hp:t(?:\s[^>]*)?>(.*?)</hp:t>", re.S)
+# 태그를 제거하고 엔티티만 되돌린다. 문단 안의 줄바꿈/탭은 글자 수에 넣지 않는다.
+_TAG_RE = re.compile(r"<[^>]+>")
+_LINEBREAK_RE = re.compile(r"[\r\n\t]+")
+_ENTITY_RE = re.compile(r"&(#x?[0-9a-fA-F]+|[a-zA-Z]+);")
+_BUILTIN_ENTITIES = {"quot": '"', "apos": "'", "amp": "&", "lt": "<", "gt": ">"}
+
+
+def _unescape_xml(text: str) -> str:
+    """XML 엔티티를 문자로 되돌린다. 숫자 참조(&#10; &#xA;)도 처리한다."""
+
+    def repl(match: re.Match[str]) -> str:
+        body = match.group(1)
+        if body.startswith("#"):
+            try:
+                code = int(body[2:], 16) if body[1] in "xX" else int(body[1:])
+            except ValueError:
+                return match.group(0)
+            if 0 <= code <= 0x10FFFF:
+                return chr(code)
+            return match.group(0)
+        return _BUILTIN_ENTITIES.get(body, match.group(0))
+
+    return _ENTITY_RE.sub(repl, text)
+
 
 def count_characters(text: str) -> int:
     """글자 수를 센다 — 공백 포함, 줄바꿈(\\n, \\r) 제외.
@@ -35,20 +72,54 @@ def count_characters(text: str) -> int:
     return len(text) - text.count("\n") - text.count("\r")
 
 
+def extract_hwpx_text(path: Path) -> str:
+    """HWPX 파일에서 본문 텍스트를 뽑아 하나의 문자열로 돌려준다.
+
+    HWPX는 ZIP으로, 본문은 Contents/section<N>.xml에 들어 있다. 각 XML에서 문단
+    (hp:p)을 찾아 그 안의 텍스트 런(hp:t)을 이어 붙이고, 문단 사이에 개행을 넣는다.
+    개행은 count_characters()에서 제외되므로 글자 수에는 영향이 없고, 문단 경계가
+    붙어버리는 것만 막는다.
+
+    본문이 여러 section에 나뉘어 있어도 숫자 순서대로 이어 붙인다(문자열 정렬이면
+    section10이 section2보다 앞에 온다).
+    """
+    chunks: list[str] = []
+    with zipfile.ZipFile(path) as archive:
+        sections = []
+        for name in archive.namelist():
+            match = _SECTION_RE.match(name)
+            if match:
+                sections.append((int(match.group(1)), name))
+        for _, name in sorted(sections):
+            xml = archive.read(name).decode("utf-8", errors="replace")
+            for paragraph in _PARAGRAPH_RE.findall(xml):
+                runs = _TEXT_RUN_RE.findall(paragraph)
+                text = _LINEBREAK_RE.sub("", _unescape_xml(_TAG_RE.sub("", "".join(runs))))
+                chunks.append(text)
+    return "\n".join(chunks)
+
+
+def read_text_file(path: Path) -> str:
+    """확장자에 맞춰 텍스트를 읽는다. 지원하지 않는 형식이면 OSError."""
+    if path.suffix.lower() == ".hwpx":
+        return extract_hwpx_text(path)
+    return path.read_text(encoding="utf-8")
+
+
 def scan_folder(folder: Path) -> dict[str, int]:
-    """폴더를 재귀 탐색해 .txt 파일별 글자 수를 반환한다.
+    """폴더를 재귀 탐색해 집계 대상 파일별 글자 수를 반환한다.
 
     키는 폴더 기준 상대 경로(슬래시 구분)다. 읽을 수 없는 파일은 건너뛴다.
     """
     snapshot: dict[str, int] = {}
     for path in sorted(folder.rglob("*")):
-        if not path.is_file() or path.suffix.lower() != ".txt":
+        if not path.is_file() or path.suffix.lower() not in TEXT_SUFFIXES:
             continue
         if path.name.startswith("."):
             continue  # 에디터 임시 파일 등 제외
         try:
-            text = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
+            text = read_text_file(path)
+        except (OSError, UnicodeDecodeError, zipfile.BadZipFile):
             continue
         snapshot[path.relative_to(folder).as_posix()] = count_characters(text)
     return snapshot
