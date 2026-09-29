@@ -1,0 +1,15 @@
+# Git이 줄바꿈을 정규화해 diff가 통째로 바뀌는 것을 막는다.
+# index.html이 CRLF로 저장되면 매 편집마다 모든 줄이 변경된 것으로 보여
+# 실제 변경분을 가려 Reviewed 선이 무의미해진다.
+* text=auto eol=lf
+
+# 텍스트 파일은 LF로 체크아웃
+*.html text eol=lf
+*.js   text eol=lf
+*.py   text eol=lf
+*.md   text eol=lf
+*.txt  text eol=lf
+
+# Windows 실행 스크립트만 CRLF 유지 (직접 실행되므로)
+*.bat  text eol=crlf
+*.cmd  text eol=crlf

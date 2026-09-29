@@ -231,6 +231,14 @@ body {
   margin-top: 4px;
 }
 
+.sync-status {
+  font-size: 8px;
+  color: var(--sub);
+  margin-top: 3px;
+  min-height: 10px;
+  opacity: 0.7;
+}
+
 /* 🟩 PROGRESS BAR */
 .progress {
   display: flex;
@@ -714,6 +722,7 @@ button {
   <div class="count-section">
     <div id="count" class="count">0</div>
     <div id="goalText" class="goal">GOAL 4,000 CHARACTERS</div>
+    <div id="syncStatus" class="sync-status"></div>
   </div>
 
   <!-- PROGRESS -->
@@ -1329,6 +1338,79 @@ button {
       localStorage.setItem("writingData", JSON.stringify(writingData));
     }
 
+    // ── 자동 집계 (Python 카운터 연동) ───────────────────────────
+    // Python이 폴더의 .txt 글자 수를 스캔해 직전 대비 증가분(델타)을 보내면
+    // 기존 changeCount() 경로로 누적한다. 원본 데이터는 계속 localStorage가 갖는다.
+    //
+    // 주소를 명시한다. 상대 경로("/api/delta")로 두면 위젯을 파일로 직접 열었을 때
+    // 브라우저가 로컬 파일의 네트워크 접근을 막아 동작하지 않는다.
+    // "localhost"는 OS에 따라 IPv6(::1)로 먼저 해석될 수 있는데 서버는 127.0.0.1에
+    // 바인딩되어 있으면 그때 연결이 거부되므로, 실패 시 127.0.0.1로 한 번 더 시도한다.
+    // 포트를 바꾸려면 tracker.py의 --port와 이 값을 함께 바꿀 것.
+    const SYNC_API_URLS = [
+      "http://localhost:8000/api/delta",
+      "http://127.0.0.1:8000/api/delta",
+    ];
+    const SYNC_INTERVAL_MS = 10000;
+    const SYNC_FAIL_THRESHOLD = 3;
+    let syncFailCount = 0;
+    let syncApiIndex = 0;
+
+    // 폴링을 눈으로 확인하기 위한 로그. 브라우저 콘솔(F12)에서 본다.
+    // 창이 열려 있는 동안만 동작하므로 10초마다 1줄씩 쌓인다.
+    function syncLog(level, message, detail) {
+      const stamp = new Date().toLocaleTimeString("ko-KR");
+      const line = "[" + stamp + "][글자수카운터] " + message;
+      if (level === "error") {
+        console.error(line, detail === undefined ? "" : detail);
+      } else if (level === "warn") {
+        console.warn(line, detail === undefined ? "" : detail);
+      } else {
+        console.log(line, detail === undefined ? "" : detail);
+      }
+    }
+
+    function updateSyncStatus() {
+      const status = document.getElementById("syncStatus");
+      if (!status) return;
+      status.textContent = syncFailCount >= SYNC_FAIL_THRESHOLD
+        ? "카운터 연결 안 됨"
+        : "자동 집계 중";
+    }
+
+    function pollDelta() {
+      const url = SYNC_API_URLS[syncApiIndex];
+      fetch(url)
+        .then((res) => res.json())
+        .then((data) => {
+          syncFailCount = 0;
+          updateSyncStatus();
+          if (data.delta > 0) {
+            const before = count;
+            changeCount(data.delta);
+            syncLog("info",
+              "새 글자 " + data.delta + "자 반영 (" + before + " → " + count + ")",
+              { url: url, delta: data.delta, total: count, timestamp: data.timestamp });
+          } else {
+            syncLog("info", "변화 없음 (delta 0)", { url: url, timestamp: data.timestamp });
+          }
+        })
+        .catch((err) => {
+          // 서버가 꺼져 있으면 마지막 집계 값을 그대로 유지한다.
+          syncFailCount++;
+          if (syncApiIndex < SYNC_API_URLS.length - 1) {
+            syncApiIndex++;   // 다음 주소로 넘어간다 (localhost → 127.0.0.1)
+            syncLog("warn", "연결 실패 → 다른 주소로 재시도: " + SYNC_API_URLS[syncApiIndex],
+              { tried: url, error: err && err.message });
+            return;
+          }
+          updateSyncStatus();
+          syncLog("error",
+            "카운터 연결 실패 " + syncFailCount + "회 연속 (서버가 꺼져 있나 확인)",
+            { tried: url, error: err && err.message });
+        });
+    }
+
     function toggleSettings() {
       const settings = document.getElementById("settings");
       const customizeBtn = document.getElementById("customizeBtn");
@@ -1367,6 +1449,9 @@ button {
       setCalendarVisible(calendarVisible);
       updateToday();
       renderCalendar();
+      updateSyncStatus();
+      pollDelta();
+      setInterval(pollDelta, SYNC_INTERVAL_MS);
     });
 </script>
 
