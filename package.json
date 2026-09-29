@@ -1,0 +1,16 @@
+{
+  "name": "writing-tracker-widget-tests",
+  "version": "1.0.0",
+  "private": true,
+  "description": "글쓰기 트래커 위젯 테스트. 실행: npm test",
+  "scripts": {
+    "test": "node test_widget_config.js && node test_widget_log.js && node test_widget_poll.js",
+    "test:config": "node test_widget_config.js",
+    "test:log": "node test_widget_log.js",
+    "test:poll": "node test_widget_poll.js",
+    "test:python": "python3 -m unittest discover -p 'test_*.py'"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -1347,10 +1347,30 @@ button {
     // "localhost"는 OS에 따라 IPv6(::1)로 먼저 해석될 수 있는데 서버는 127.0.0.1에
     // 바인딩되어 있으면 그때 연결이 거부되므로, 실패 시 127.0.0.1로 한 번 더 시도한다.
     // 포트를 바꾸려면 tracker.py의 --port와 이 값을 함께 바꿀 것.
-    const SYNC_API_URLS = [
-      "http://localhost:8000/api/delta",
-      "http://127.0.0.1:8000/api/delta",
-    ];
+    const SYNC_API_URLS = resolveSyncApiUrls();
+
+    // 폴링 대상 주소 결정. 순서:
+    //   1) window.__SYNC_API_BASE__ — 테스트가 주입한다. 전용 포트/서버를 쓰게 해
+    //      실제로 떠 있는 위젯 탭(프로덕션 8000)과 통신이 뒤섞이지 않게 한다.
+    //   2) <meta name="sync-api-base"> — index.html을 고치지 않고 브라우저로
+    //      지정할 때 쓴다(파일 단위 배포본을 갈아끼울 때 유용).
+    //   3) 기본값 — 로컬 개발용 localhost:8000.
+    function resolveSyncApiUrls() {
+      const DEFAULT_BASE = "http://localhost:8000";
+      let fromMeta = "";
+      // meta 조회는 선택 사항이다. querySelector가 없는 최소 DOM 대역(테스트 하네스)에서도
+      // 죽지 않게 guarding한다 — 기본값으로 떨어지면 된다.
+      try {
+        const meta = document.querySelector('meta[name="sync-api-base"]');
+        if (meta && meta.content) fromMeta = meta.content;
+      } catch (_) { /* querySelector 미지원 환경 → 기본값 사용 */ }
+      const raw =
+        (typeof globalThis !== "undefined" && globalThis.__SYNC_API_BASE__) ||
+        fromMeta ||
+        DEFAULT_BASE;
+      const base = String(raw).replace(/\/api\/delta\/?$/, "").replace(/\/+$/, "");
+      return [base + "/api/delta", base.replace("localhost", "127.0.0.1") + "/api/delta"];
+    }
     const SYNC_INTERVAL_MS = 10000;
     const SYNC_FAIL_THRESHOLD = 3;
     let syncFailCount = 0;

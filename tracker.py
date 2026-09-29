@@ -177,6 +177,12 @@ def main() -> int:
     parser.add_argument(
         "--port", type=int, default=DEFAULT_PORT, help=f"포트 (기본값: {DEFAULT_PORT})"
     )
+    parser.add_argument(
+        "--baseline",
+        default=None,
+        help="기준점 파일 경로 (기본값: 저장소 루트의 baseline.json). "
+        "테스트는 여기에 임시 경로를 줘서 실제 기준점을 건드리지 않는다.",
+    )
     args = parser.parse_args()
 
     folder = Path(args.folder).expanduser().resolve()
@@ -184,7 +190,12 @@ def main() -> int:
         print(f"폴더를 찾을 수 없습니다: {folder}", file=sys.stderr)
         return 1
 
-    baseline_path = PROJECT_ROOT / "baseline.json"
+    baseline_path = (
+        Path(args.baseline).expanduser().resolve()
+        if args.baseline
+        else PROJECT_ROOT / "baseline.json"
+    )
+    baseline_path.parent.mkdir(parents=True, exist_ok=True)
 
     # 포트 중복 여부를 먼저 확인한다 (Windows에서 두 서버가 동시에 뜨는 일이 있어
     # 명확히 알린다). 여기서 실패해야 "위젯 주소"가 출력되지 않는다.
