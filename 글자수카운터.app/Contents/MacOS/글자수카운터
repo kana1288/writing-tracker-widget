@@ -11,7 +11,14 @@
 HERE="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 REPO="$(cd "$HERE/../../.." && pwd)"
 
-FOLDER="/Users/kim-ayoung/Documents/GitHub/writing-tracker-widget/testFolder"
+# 감시 폴더는 tracker.py의 DEFAULT_FOLDER가 단일 출처다. 여기서 하드코딩하면
+# 둘이 어긋난다. 표시용으로 tracker.py에서 값을 읽어온다(실제 사용은 tracker.py가 한다).
+if [ -x "$REPO/.venv/bin/python3" ]; then
+  FOLDER="$("$REPO/.venv/bin/python3" -c "import sys; sys.path.insert(0, '$REPO'); import tracker; print(tracker.DEFAULT_FOLDER)" 2>/dev/null || echo "")"
+else
+  FOLDER=""
+fi
+[ -n "$FOLDER" ] || FOLDER="(tracker.py 기본값)"
 PORT=8000
 
 echo ""
@@ -45,4 +52,4 @@ fi
 ( sleep 1; open "http://localhost:$PORT" ) &
 
 cd "$REPO"
-exec "$PY" "$REPO/tracker.py" --port "$PORT" --folder "$FOLDER"
+exec "$PY" "$REPO/tracker.py" --port "$PORT"

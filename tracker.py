@@ -272,8 +272,12 @@ def main() -> int:
 
     folder = Path(args.folder).expanduser().resolve()
     if not folder.is_dir():
-        print(f"폴더를 찾을 수 없습니다: {folder}", file=sys.stderr)
-        return 1
+        # 집계 폴더를 아직 만들지 않은 경우(최초 실행)에는 만들어 준다.
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            print(f"폴더를 만들 수 없습니다: {folder} ({exc})", file=sys.stderr)
+            return 1
 
     baseline_path = (
         Path(args.baseline).expanduser().resolve()
