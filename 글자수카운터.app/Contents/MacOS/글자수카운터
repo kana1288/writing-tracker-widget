@@ -1,0 +1,48 @@
+#!/bin/bash
+# 글자수 카운터 — Finder 바로가기(앱 번들) 본체.
+#
+# 더블클릭하면: 터미널 창이 열리고 카운터 서버가 뜬다.
+# 위젯 브라우저는 자동으로 열리고, 이 창을 닫으면 서버도 함께 종료된다.
+
+# 앱 번들은 .app/Contents/MacOS 에서 실행되므로, 저장소 루트는 세 단계 위다.
+#   MacOS → Contents → 글자수카운터.app → 저장소 루트
+# 심볼릭 링크를 따라가야 "글자수카운터.app"가 다른 곳(예: Applications)에 복사돼도
+# 원본 저장소를 찾을 수 있다.
+HERE="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+REPO="$(cd "$HERE/../../.." && pwd)"
+
+FOLDER="/Users/kim-ayoung/novel/원고"
+PORT=8000
+
+echo ""
+echo "  글자수 카운터"
+echo "  ────────────────────────────────────"
+echo "  원고 폴더: $FOLDER"
+echo "  위젯 주소: http://localhost:$PORT"
+echo ""
+echo "  브라우저를 여는 중..."
+echo "  이 창을 닫으면 카운터도 꺼집니다."
+echo ""
+
+# 이미 떠 있으면 새로 띄우지 않고 위젯만 연다.
+if lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+  echo "  ※ 이미 실행 중입니다. 그대로 사용합니다."
+  open "http://localhost:$PORT"
+  echo ""
+  echo "  (카운터를 끄려면 이 서버를 실행 중인 터미널 창을 닫으세요)"
+  # 서버를 소유한 프로세스가 없으므로 여기서 바로 종료한다.
+  exit 0
+fi
+
+# venv 파이썬이 있으면 쓰고, 없으면 시스템 파이썬으로 떨어진다.
+if [ -x "$REPO/.venv/bin/python3" ]; then
+  PY="$REPO/.venv/bin/python3"
+else
+  PY="$(command -v python3)"
+fi
+
+# 잠깐 뒤에 위젯을 연다. 서버가 아직 안 받는 구간을 피하기 위함.
+( sleep 1; open "http://localhost:$PORT" ) &
+
+cd "$REPO"
+exec "$PY" "$REPO/tracker.py" --port "$PORT" --folder "$FOLDER"

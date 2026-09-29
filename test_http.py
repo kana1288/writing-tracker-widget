@@ -122,8 +122,15 @@ class SampleFolderTests(unittest.TestCase):
         self.folder = Path(__file__).resolve().parent / "testFolder"
 
     def test_sample_expectations(self):
+        # testFolder/에 개인 파일(안녕하세요.hwpx)이 함께 있다. 이 테스트는
+        # "저장소에 커밋된 샘플 픽스처"만 대상으로 하므로 그 파일은 제외한다.
+        actual = {
+            name: size
+            for name, size in scan_folder(self.folder).items()
+            if name in {"sample1.txt", "sample2.txt", "nested/deep.txt"}
+        }
         self.assertEqual(
-            scan_folder(self.folder),
+            actual,
             {"sample1.txt": 5, "sample2.txt": 6, "nested/deep.txt": 5},
         )
 
