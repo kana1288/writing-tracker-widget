@@ -11,7 +11,7 @@
 HERE="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 REPO="$(cd "$HERE/../../.." && pwd)"
 
-FOLDER="/Users/kim-ayoung/novel/원고"
+FOLDER="/Users/kim-ayoung/Documents/GitHub/writing-tracker-widget/testFolder"
 PORT=8000
 
 echo ""

@@ -10,7 +10,7 @@ set -e
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # 감시할 원고 폴더. 여기에 .txt / .hwpx 파일을 두면 글자 수를 센다.
-FOLDER="/Users/kim-ayoung/novel/원고"
+FOLDER="/Users/kim-ayoung/Documents/GitHub/writing-tracker-widget/testFolder"
 PORT=8000
 
 # venv 파이썬이 있으면 쓰고, 없으면 시스템 파이썬으로 떨어진다.
